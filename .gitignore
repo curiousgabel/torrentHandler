@@ -1,0 +1,6 @@
+.idea*
+torrenthandler.egg-info
+customMover.py
+build
+dist
+*.pyc
