@@ -12,12 +12,16 @@ class FileMover(TorrentHandler):
     deleteSource = False
     mountDriveLetter = 'P'
 
-    def process(self, details):
-        sourceFileName = self.getSourceFileName(details)
-        sourceFile = details.directory + self.DS + sourceFileName
+    def process(self):
+        details = self.getDetails()
+        sourceFileName = self.getSourceFileName()
+        sourceFile = details.directory
+        if sourceFileName != '':
+            sourceFile += self.DS + sourceFileName
 
-        destFileName = self.getFileName(details)
-        destFile = self.destinationDirectory + self.DS + destFileName
+        destFileName = self.getFileName()
+        destDirectory = self.getDestinationDirectory()
+        destFile = destDirectory + self.DS + destFileName
         result = self.__moveFile(sourceFile, destFile)
 
         if result and self.deleteSource:
@@ -26,13 +30,18 @@ class FileMover(TorrentHandler):
 
         return result
 
+    def getDestinationDirectory(self):
+        return self.destinationDirectory
+
     def __moveFile(self, sourceFile, destFile):
         result = False
         self.log('copying ' + sourceFile + ' to ' + destFile)
-        print('copying ' + sourceFile + ' to ' + destFile)
 
         self.__mountDestination()
-        shutil.copy2(sourceFile, destFile)
+        if os.path.isdir(sourceFile):
+            shutil.copytree(sourceFile, destFile)
+        else:
+            shutil.copy2(sourceFile, destFile)
         self.__unmountDestination()
 
         if os.path.isfile(destFile):
@@ -47,3 +56,21 @@ class FileMover(TorrentHandler):
     def __unmountDestination(self):
         if self.networkDrive:
             os.system(r"NET USE " + self.mountDriveLetter + ": /DELETE")
+
+
+class Catalog(FileMover):
+
+    def getDestinationDirectory(self):
+        rootDir = self.destinationDirectory
+        chain = self.getDirectoryChain()
+        chain.insert(0, rootDir)
+
+        result = self.DS.join(chain)
+        if not os.path.isdir(result):
+            os.makedirs(result)
+
+        return result
+
+
+    def getDirectoryChain(self):
+        return []

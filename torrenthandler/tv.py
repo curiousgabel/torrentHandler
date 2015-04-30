@@ -1,8 +1,11 @@
 __author__ = 'Mike'
 
+from torrenthandler.fileMover import Catalog
+
 from abc import ABCMeta, abstractmethod, abstractproperty
 import re
 import os
+import magic
 
 
 class TvShow():
@@ -10,28 +13,35 @@ class TvShow():
     @abstractproperty
     def showName(self):
         raise NotImplementedError()
+    __sourceFileName = ''
+    __sourceDirectory = ''
     __showNameReplacement = '[[showName]]'
     __episodeReplacement = '[[episode]]'
     __titleReplacement = '[[title]]'
     __extensionReplacement = '[[extension]]'
     __fileNameTemplate = '[[showName]] [[episode]] - [[title]].[[extension]]'
-    __episodeSeparator = 'x'
+    episodeSeparator = 'x'
 
-    __episodeRegex = re.compile('[0-9]*([0-9]{1,2})\D{0,9}([0-9]{1,2})[0-9]*')
+    episodeRegex = re.compile('[0-9]*([0-9]{1,2}?)\D{0,9}([0-9]{1,2})[0-9]*')
     __cleanUpTitleRegexStr = '(\s+-\s+)(\\.)'
     __cleanupSpacesRegexStr = '(\s+)'
 
-    def matches(self, details):
+    def afterSetDetails(self, details):
+        self.__sourceDirectory = details.directory
+        self.__sourceFileName = self.getSourceFileName().lower()
+
+    def matches(self):
         result = False
         nameParts = self.showName.split(' ')
-        name = self.getSourceFileName(details)
+        name = self.__sourceFileName
         index = 0
 
         if len(nameParts) > 0:
             result = True
 
             for word in nameParts:
-                findIndex = name.find(word, index)
+                print('looking for ' + word + ' in ' + name)
+                findIndex = name.find(word.lower(), index)
                 if findIndex > -1:
                     index = findIndex + len(word)
                 else:
@@ -40,24 +50,35 @@ class TvShow():
 
         return result
 
-    def getFileName(self, details):
-        result = details.fileName
+    def getFileName(self, pretty=True):
+        result = self.__sourceFileName
 
-        episode = self.getEpisode(result)
-        title = self.getTitle(result)
-        extension = self.getExtension(result)
-        if extension and (episode is not '' or title is not ''):
-            result = self.__fileNameTemplate.replace(self.__showNameReplacement, self.showName)
-            result = result.replace(self.__episodeReplacement, episode)
-            result = result.replace(self.__titleReplacement, title)
-            result = result.replace(self.__extensionReplacement, extension)
-            result = self.__cleanupFileName(result)
+        if result == '':
+            files = os.listdir(self.__sourceDirectory)
+            for file in files:
+                if self.__isVideo(file):
+                    result = file
+                    break
+
+        if pretty:
+            episode = self.getEpisode(result)
+            title = self.getTitle()
+            extension = self.getExtension(result)
+            if extension and (episode is not '' or title is not ''):
+                result = self.__fileNameTemplate.replace(self.__showNameReplacement, self.showName)
+                result = result.replace(self.__episodeReplacement, episode)
+                result = result.replace(self.__titleReplacement, title)
+                result = result.replace(self.__extensionReplacement, extension)
+                result = self.__cleanupFileName(result)
 
         return result
 
+    def getSourceFileName(self):
+        return self.getFileName(False)
+
     def getEpisode(self, name):
         result = ''
-        regex = self.__episodeRegex
+        regex = self.episodeRegex
 
         matches = regex.search(name)
         season = matches.group(1)
@@ -67,11 +88,11 @@ class TvShow():
             season = self.__completeNumber(season)
             episode = self.__completeNumber(episode)
 
-            result = season + self.__episodeSeparator + episode
+            result = season + self.episodeSeparator + episode
 
         return result
 
-    def getTitle(self, name):
+    def getTitle(self):
         result = ''
         # Implement an IMDB API here?
 
@@ -99,28 +120,36 @@ class TvShow():
 
         return name
 
+    def __getMediaInfo(self, details):
+        result = []
 
-class NestedTvShow(TvShow):
-
-    def getFileName(self, details, pretty=True):
-        result = details.fileName
-
-        if result == '':
-            parts = details.directory.split('\\')
-            tmpFileName = parts[-1]
+        if details.fileName != '':
+            files = [details.directory + '\\' + details.fileName]
+        else:
             files = os.listdir(details.directory)
 
-            for file in files:
-                fileName, extension = os.path.splitext(file)
-                if fileName == tmpFileName:
-                    result = fileName + extension
-                    break
 
-        if pretty:
-            details.fileName = result
-            result = TvShow.getFileName(self, details)
+        for file in files:
+            fileDetails = magic.from_file(file)
 
         return result
 
-    def getSourceFileName(self, details):
-        return self.getFileName(details, False)
+    def __isVideo(self, filename):
+        result = False
+
+        ext = self.getExtension(filename)
+
+        if ext.lower() in ['mp4']:
+            result = True
+
+        return result
+
+class TvCatalog(TvShow, Catalog):
+
+    def getDirectoryChain(self):
+        showName = self.showName
+        fileName = self.getFileName(False)
+        episode = self.getEpisode(fileName)
+        season, episode = episode.split(self.episodeSeparator)
+
+        return [showName, 'Season ' + season]
