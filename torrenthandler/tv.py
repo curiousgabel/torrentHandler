@@ -1,18 +1,19 @@
-__author__ = 'Mike'
-
-from torrenthandler.fileMover import Catalog
-
-from abc import ABCMeta, abstractmethod, abstractproperty
 import re
 import os
+import shutil
+
 import magic
 
+from torrenthandler.fileMover import Catalog
+from torrenthandler.core import BaseTestCase
+from torrenthandler.torrent import TorrentDetails
 
-class TvShow():
+__author__ = 'Mike'
 
-    @abstractproperty
-    def showName(self):
-        raise NotImplementedError()
+
+class TvShow:
+
+    showName = ''
     __sourceFileName = ''
     __sourceDirectory = ''
     __showNameReplacement = '[[showName]]'
@@ -40,7 +41,6 @@ class TvShow():
             result = True
 
             for word in nameParts:
-                print('looking for ' + word + ' in ' + name)
                 findIndex = name.find(word.lower(), index)
                 if findIndex > -1:
                     index = findIndex + len(word)
@@ -76,6 +76,9 @@ class TvShow():
     def getSourceFileName(self):
         return self.getFileName(False)
 
+    def getSourceDirectory(self):
+        return self.__sourceDirectory
+
     def getEpisode(self, name):
         result = ''
         regex = self.episodeRegex
@@ -106,7 +109,6 @@ class TvShow():
             result = extension.replace('.', '')
 
         return result
-
 
     def __completeNumber(self, num):
         if len(num) < 2:
@@ -144,6 +146,84 @@ class TvShow():
 
         return result
 
+
+class TestTvShow(BaseTestCase):
+    showName = 'Show Name'
+    trackerName = 'tracker.name.com'
+    directory = 'C:\\Windows\\Temp'
+    fileExtension = 'mp4'
+    season = '01'
+    episode = '02'
+    fileName = 'Show Nameseason' + season + 'episode' + episode + '.' + fileExtension
+    prettyFileName = 'Show Name ' + season + 'x' + episode + '.' + fileExtension
+
+    def setupData(self):
+        self.testObject.showName = self.showName
+        details = [
+            self.trackerName,
+            self.fileName,
+            self.directory
+        ]
+        self.testDetails = TorrentDetails(details)
+        self.setupProperties()
+        self.setupFile()
+        self.setupDirectory()
+
+    def setupProperties(self):
+        self.destinationDirectory = self.directory + '\\tmpfilemovedir'
+        self.sourceFile = self.directory + '\\' + self.fileName
+        self.destinationFile = self.destinationDirectory + '\\' + self.fileName
+
+    def cleanupData(self):
+        self.cleanupFile()
+        self.cleanupDirectory()
+
+    def setupFile(self):
+        if os.path.exists(self.sourceFile) is False:
+            open(self.sourceFile, 'a').close()
+
+    def cleanupFile(self):
+        if os.path.exists(self.sourceFile):
+            os.remove(self.sourceFile)
+
+    def setupDirectory(self):
+        if os.path.isdir(self.destinationDirectory) is False:
+            os.mkdir(self.destinationDirectory)
+
+    def cleanupDirectory(self):
+        if os.path.isdir(self.destinationDirectory):
+            shutil.rmtree(self.destinationDirectory)
+
+    def test_afterSetDetails(self):
+        self.testObject.afterSetDetails(self.testDetails)
+        self.assertEqual(self.testObject.getSourceDirectory(), self.directory)
+        self.assertEqual(self.testObject.getSourceFileName(), self.fileName.lower())
+
+    def test_matches(self):
+        self.testObject.afterSetDetails(self.testDetails)
+        self.assertTrue(self.testObject.matches())
+
+        tmp_show_name = self.testObject.showName
+        self.testObject.showName = 'noshow'
+        self.assertFalse(self.testObject.matches())
+        self.testObject.showName = tmp_show_name
+
+    def test_getFileName(self):
+        self.testObject.afterSetDetails(self.testDetails)
+        self.assertEqual(self.testObject.getFileName(), self.prettyFileName)
+
+    def test_getEpisode(self):
+        string = self.season + 'x' + self.episode
+        self.assertEqual(self.testObject.getEpisode(self.fileName), string)
+
+    def test_getTitle(self):
+        title = ''
+        self.assertEqual(self.testObject.getTitle(), title)
+
+    def test_getExtension(self):
+        self.assertEqual(self.testObject.getExtension(self.fileName), self.fileExtension)
+
+
 class TvCatalog(TvShow, Catalog):
 
     def getDirectoryChain(self):
@@ -153,3 +233,11 @@ class TvCatalog(TvShow, Catalog):
         season, episode = episode.split(self.episodeSeparator)
 
         return [showName, 'Season ' + season]
+
+
+class TestTvCatalog(TestTvShow):
+
+    def test_getDirectoryChain(self):
+        chain = [self.showName, 'Season ' + self.season]
+        self.testObject.afterSetDetails(self.testDetails)
+        self.assertEqual(self.testObject.getDirectoryChain(), chain)

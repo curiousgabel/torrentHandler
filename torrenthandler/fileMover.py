@@ -1,8 +1,9 @@
-__author__ = 'Mike'
-
 import os
 import shutil
-from torrenthandler.core import TorrentHandler
+
+from torrenthandler.torrent import TorrentHandler, TestTorrentHandler
+
+__author__ = 'Mike'
 
 
 class FileMover(TorrentHandler):
@@ -58,6 +59,55 @@ class FileMover(TorrentHandler):
             os.system(r"NET USE " + self.mountDriveLetter + ": /DELETE")
 
 
+class TestFileMover(TestTorrentHandler):
+    processReturnValue = True
+
+    def setupData(self):
+        TestTorrentHandler.setupData(self)
+        self.setupProperties()
+
+        self.testObject.destinationDirectory = self.destinationDirectory
+        self.testObject.setDetails(self.testDetails)
+        self.setupFile()
+        self.setupDirectory()
+
+    def cleanupData(self):
+        TestTorrentHandler.cleanupData(self)
+
+        self.cleanupFile()
+        self.cleanupDirectory()
+
+    def setupProperties(self):
+        self.destinationDirectory = self.directory + '\\tmpfilemovedir'
+        self.sourceFile = self.directory + '\\' + self.filename
+        self.destinationFile = self.destinationDirectory + '\\' + self.filename
+
+    def setupFile(self):
+        if os.path.exists(self.sourceFile) is False:
+            open(self.sourceFile, 'a').close()
+
+    def cleanupFile(self):
+        if os.path.exists(self.sourceFile):
+            os.remove(self.sourceFile)
+
+    def setupDirectory(self):
+        if os.path.isdir(self.destinationDirectory) is False:
+            os.mkdir(self.destinationDirectory)
+
+    def cleanupDirectory(self):
+        if os.path.isdir(self.destinationDirectory):
+            shutil.rmtree(self.destinationDirectory)
+
+    def test_getDestinationDirectory(self):
+        self.testObject.destinationDirectory = self.destinationDirectory
+        self.assertEqual(self.testObject.getDestinationDirectory(), self.destinationDirectory)
+
+    def test_process(self):
+        self.testObject.process()
+        self.assertTrue(os.path.exists(self.destinationFile))
+        self.assertTrue(os.path.exists(self.sourceFile))
+
+
 class Catalog(FileMover):
 
     def getDestinationDirectory(self):
@@ -71,6 +121,12 @@ class Catalog(FileMover):
 
         return result
 
-
     def getDirectoryChain(self):
         return []
+
+
+class TestCatalog(TestFileMover):
+    directoryChain = []
+
+    def test_getDirectoryChain(self):
+        self.assertEqual(self.testObject.getDirectoryChain(), self.directoryChain)
