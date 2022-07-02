@@ -7,15 +7,19 @@ import magic
 from torrenthandler.fileMover import Catalog
 from torrenthandler.core import BaseTestCase
 from torrenthandler.torrent import TorrentDetails
+from torrenthandler.api import MovieApi
 
 __author__ = 'Mike'
 
 
-class TvShow:
+class TvShow(Catalog):
 
+    api = None
     showName = ''
+    apiShowName = None
     __sourceFileName = ''
     __sourceDirectory = ''
+    destinationDirectory = '\\\\thewarehouse\\Public\\Videos\\TV Shows'
     __showNameReplacement = '[[showName]]'
     __episodeReplacement = '[[episode]]'
     __titleReplacement = '[[title]]'
@@ -23,13 +27,14 @@ class TvShow:
     __fileNameTemplate = '[[showName]] [[episode]] - [[title]].[[extension]]'
     episodeSeparator = 'x'
 
-    episodeRegex = re.compile('[0-9]*([0-9]{1,2}?)\D{0,9}([0-9]{1,2})[0-9]*')
+    #episodeRegex = re.compile('[0-9]*([0-9]{1,2}?)\D{0,9}([0-9]{1,2})[0-9]*')
+    episodeRegex = re.compile('(?:([0-9]{2})\D{0,9}([0-9]{2})|([0-9])\D{0,9}([0-9]{2}))')
     __cleanUpTitleRegexStr = '(\s+-\s+)(\\.)'
     __cleanupSpacesRegexStr = '(\s+)'
 
     def afterSetDetails(self, details):
         self.__sourceDirectory = details.directory
-        self.__sourceFileName = self.getSourceFileName().lower()
+        self.__sourceFileName = self.getDetails().fileName #self.getSourceFileName().lower()
 
     def matches(self):
         result = False
@@ -51,20 +56,13 @@ class TvShow:
         return result
 
     def getFileName(self, pretty=True):
-        result = self.__sourceFileName
-
-        if result == '':
-            files = os.listdir(self.__sourceDirectory)
-            for file in files:
-                if self.__isVideo(file):
-                    result = file
-                    break
+        result = self.findFileName()
 
         if pretty:
             episode = self.getEpisode(result)
             title = self.getTitle()
             extension = self.getExtension(result)
-            if extension and (episode is not '' or title is not ''):
+            if extension and (episode != '' or title != ''):
                 result = self.__fileNameTemplate.replace(self.__showNameReplacement, self.showName)
                 result = result.replace(self.__episodeReplacement, episode)
                 result = result.replace(self.__titleReplacement, title)
@@ -80,24 +78,24 @@ class TvShow:
         return self.__sourceDirectory
 
     def getEpisode(self, name):
-        result = ''
-        regex = self.episodeRegex
+        season = self.getSeasonNumber(name)
+        episode = self.getEpisodeNumber(name)
 
-        matches = regex.search(name)
-        season = matches.group(1)
-        episode = matches.group(2)
-
-        if season is not None and episode is not None:
-            season = self.__completeNumber(season)
-            episode = self.__completeNumber(episode)
-
-            result = season + self.episodeSeparator + episode
+        result = season + self.episodeSeparator + episode
 
         return result
 
     def getTitle(self):
-        result = ''
-        # Implement an IMDB API here?
+        api = self.getMovieApi()
+        name = self.findFileName()
+        season = self.getSeasonNumber(name)
+        episode = self.getEpisodeNumber(name)
+        showName = self.apiShowName
+
+        if showName is None:
+            showName = self.showName
+
+        result = api.getEpisodeTitle(showName, season, episode)
 
         return result
 
@@ -109,6 +107,46 @@ class TvShow:
             result = extension.replace('.', '')
 
         return result
+
+    """ Needs a test case"""
+    def getSeasonNumber(self, name):
+        result = ''
+        regex = self.episodeRegex
+
+        matches = regex.search(name)
+        # print("season matches for %s:" % name)
+        # print(matches)
+        for seasonPosition in [1, 3]:
+            season = matches.group(seasonPosition)
+            if season is not None:
+                result = self.__completeNumber(season)
+                break
+
+        return result
+
+    """ Needs a test case"""
+    def getEpisodeNumber(self, name):
+        result = ''
+        regex = self.episodeRegex
+
+        matches = regex.search(name)
+
+        for episodePosition in [2, 4]:
+            episode = matches.group(episodePosition)
+
+            if episode is not None:
+                result = self.__completeNumber(episode)
+                break
+
+        return result
+
+    def getDirectoryChain(self):
+        showName = self.showName
+        fileName = self.getFileName(False)
+        episode = self.getEpisode(fileName)
+        season, episode = episode.split(self.episodeSeparator)
+
+        return [showName, 'Season ' + season]
 
     def __completeNumber(self, num):
         if len(num) < 2:
@@ -141,21 +179,42 @@ class TvShow:
 
         ext = self.getExtension(filename)
 
-        if ext.lower() in ['mp4']:
+        if ext.lower() in ['mp4', 'mkv', 'avi']:
             result = True
 
         return result
 
+    """ Needs a test case"""
+    def findFileName(self):
+        result = self.__sourceFileName
+
+        if result == '':
+            files = os.listdir(self.__sourceDirectory)
+            for file in files:
+                if self.__isVideo(file):
+                    result = file
+                    break
+
+        return result
+
+    """ Needs a test case"""
+    def getMovieApi(self):
+        if self.api is not MovieApi:
+            self.api = MovieApi()
+
+        return self.api
+
 
 class TestTvShow(BaseTestCase):
-    showName = 'Show Name'
+    showName = 'Simpsons'
     trackerName = 'tracker.name.com'
     directory = 'C:\\Windows\\Temp'
     fileExtension = 'mp4'
-    season = '01'
-    episode = '02'
-    fileName = 'Show Nameseason' + season + 'episode' + episode + '.' + fileExtension
-    prettyFileName = 'Show Name ' + season + 'x' + episode + '.' + fileExtension
+    season = '06'
+    episode = '08'
+    title = 'Lisa on Ice'
+    fileName = showName + season + 'episode' + episode + '.' + fileExtension
+    prettyFileName = showName + ' ' + season + 'x' + episode + ' - ' + title + '.' + fileExtension
 
     def setupData(self):
         self.testObject.showName = self.showName
@@ -217,27 +276,220 @@ class TestTvShow(BaseTestCase):
         self.assertEqual(self.testObject.getEpisode(self.fileName), string)
 
     def test_getTitle(self):
-        title = ''
-        self.assertEqual(self.testObject.getTitle(), title)
+        self.testObject.afterSetDetails(self.testDetails)
+        self.assertEqual(self.testObject.getTitle(), self.title)
 
     def test_getExtension(self):
         self.assertEqual(self.testObject.getExtension(self.fileName), self.fileExtension)
-
-
-class TvCatalog(TvShow, Catalog):
-
-    def getDirectoryChain(self):
-        showName = self.showName
-        fileName = self.getFileName(False)
-        episode = self.getEpisode(fileName)
-        season, episode = episode.split(self.episodeSeparator)
-
-        return [showName, 'Season ' + season]
-
-
-class TestTvCatalog(TestTvShow):
 
     def test_getDirectoryChain(self):
         chain = [self.showName, 'Season ' + self.season]
         self.testObject.afterSetDetails(self.testDetails)
         self.assertEqual(self.testObject.getDirectoryChain(), chain)
+
+
+def TvShowDecorator(sourceClass):
+    class Wrapper:
+        api = None
+        showName = ''
+        apiShowName = None
+        __sourceFileName = ''
+        __sourceDirectory = ''
+        __showNameReplacement = '[[showName]]'
+        __episodeReplacement = '[[episode]]'
+        __titleReplacement = '[[title]]'
+        __extensionReplacement = '[[extension]]'
+        __fileNameTemplate = '[[showName]] [[episode]] - [[title]].[[extension]]'
+        episodeSeparator = 'x'
+
+        # episodeRegex = re.compile('[0-9]*([0-9]{1,2}?)\D{0,9}([0-9]{1,2})[0-9]*')
+        episodeRegex = re.compile('(?:([0-9]{2})\D{0,9}([0-9]{2})|([0-9])\D{0,9}([0-9]{2}))')
+        __cleanUpTitleRegexStr = '(\s+-\s+)(\\.)'
+        __cleanupSpacesRegexStr = '(\s+)'
+
+        def __init__(self, *args):
+            print('decorator inited')
+            self.sourceClass = sourceClass(*args)
+
+        def __getattr__(self, item):
+            return getattr(self.sourceClass, item)
+
+        def afterSetDetails(self, details):
+            self.__sourceDirectory = details.directory
+            self.__sourceFileName = self.getSourceFileName().lower()
+            print('decorator afterSetDetails called; calling source now')
+            self.sourceClass.afterSetDetails()
+
+        def matches(self):
+            print('decorator matches called')
+            result = False
+            nameParts = self.showName.split(' ')
+            name = self.__sourceFileName
+            index = 0
+
+            if len(nameParts) > 0:
+                result = True
+
+                for word in nameParts:
+                    findIndex = name.find(word.lower(), index)
+                    if findIndex > -1:
+                        index = findIndex + len(word)
+                    else:
+                        result = False
+                        break
+
+            return result
+
+        def getFileName(self, pretty=True):
+            result = self.findFileName()
+
+            if pretty:
+                episode = self.getEpisode(result)
+                title = self.getTitle()
+                extension = self.getExtension(result)
+                if extension and (episode != '' or title != ''):
+                    result = self.__fileNameTemplate.replace(self.__showNameReplacement, self.showName)
+                    result = result.replace(self.__episodeReplacement, episode)
+                    result = result.replace(self.__titleReplacement, title)
+                    result = result.replace(self.__extensionReplacement, extension)
+                    result = self.__cleanupFileName(result)
+
+            return result
+
+        def getSourceFileName(self):
+            return self.getFileName(False)
+
+        def getSourceDirectory(self):
+            return self.__sourceDirectory
+
+        def getEpisode(self, name):
+            season = self.getSeasonNumber(name)
+            episode = self.getEpisodeNumber(name)
+
+            result = season + self.episodeSeparator + episode
+
+            return result
+
+        def getTitle(self):
+            api = self.getMovieApi()
+            name = self.findFileName()
+            season = self.getSeasonNumber(name)
+            episode = self.getEpisodeNumber(name)
+            showName = self.apiShowName
+
+            if showName is None:
+                showName = self.showName
+
+            result = api.getEpisodeTitle(showName, season, episode)
+
+            return result
+
+        def getExtension(self, name):
+            result = ''
+            name, extension = os.path.splitext(name)
+
+            if extension is not None:
+                result = extension.replace('.', '')
+
+            return result
+
+        """ Needs a test case"""
+
+        def getSeasonNumber(self, name):
+            result = ''
+            regex = self.episodeRegex
+
+            matches = regex.search(name)
+            # print("season matches for %s:" % name)
+            # print(matches)
+            for seasonPosition in [1, 3]:
+                season = matches.group(seasonPosition)
+                if season is not None:
+                    result = self.__completeNumber(season)
+                    break
+
+            return result
+
+        """ Needs a test case"""
+
+        def getEpisodeNumber(self, name):
+            result = ''
+            regex = self.episodeRegex
+
+            matches = regex.search(name)
+
+            for episodePosition in [2, 4]:
+                episode = matches.group(episodePosition)
+
+                if episode is not None:
+                    result = self.__completeNumber(episode)
+                    break
+
+            return result
+
+        def getDirectoryChain(self):
+            showName = self.showName
+            fileName = self.getFileName(False)
+            episode = self.getEpisode(fileName)
+            season, episode = episode.split(self.episodeSeparator)
+
+            return [showName, 'Season ' + season]
+
+        def __completeNumber(self, num):
+            if len(num) < 2:
+                num = '0' + num
+
+            return num
+
+        def __cleanupFileName(self, name):
+            name = re.sub(self.__cleanupSpacesRegexStr, ' ', name)
+            name = re.sub(self.__cleanUpTitleRegexStr, r'\2', name)
+
+            return name
+
+        def __getMediaInfo(self, details):
+            result = []
+
+            if details.fileName != '':
+                files = [details.directory + '\\' + details.fileName]
+            else:
+                files = os.listdir(details.directory)
+
+            for file in files:
+                fileDetails = magic.from_file(file)
+
+            return result
+
+        def __isVideo(self, filename):
+            result = False
+
+            ext = self.getExtension(filename)
+
+            if ext.lower() in ['mp4', 'mkv', 'avi']:
+                result = True
+
+            return result
+
+        """ Needs a test case"""
+
+        def findFileName(self):
+            result = self.__sourceFileName
+
+            if result == '':
+                files = os.listdir(self.__sourceDirectory)
+                for file in files:
+                    if self.__isVideo(file):
+                        result = file
+                        break
+
+            return result
+
+        """ Needs a test case"""
+
+        def getMovieApi(self):
+            if self.api is not MovieApi:
+                self.api = MovieApi()
+
+            return self.api
+
+    return Wrapper

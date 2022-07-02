@@ -6,28 +6,32 @@ __author__ = 'Mike'
 
 
 class TorrentDetails(Object):
-    trackerName = ''
-    fileName = ''
-    directory = ''
-    argOrder = ['trackerName',
-                'fileName',
-                'directory']
+    trackerName = None
+    fileName = None
+    directory = None
+    category = None
 
-    def __init__(self, args):
-        torrent_details = dict(zip(self.argOrder, args))
-        for (name, value) in torrent_details.items():
-            self.setProperty(name, value)
+    def __init__(self, file='', directory='', tracker='', category=''):
+        self.fileName = file
+        self.directory = directory
+        self.trackerName = tracker
+        self.category = category
+
+    def __str__(self):
+        return "trackerName: %s\nfileName: %s\ndirectory: %s\ncategory: %s""" % (self.trackerName, self.fileName, self.directory, self.category)
 
 
 class TestTorrentDetails(BaseTestCase):
     trackerName = 'tracker.name.com'
     filename = 'file_name.tmp'
     directory = '/dir/etc/ory'
+    category = 'movies'
     objectParams = {
         'args': [
             trackerName,
             filename,
-            directory
+            directory,
+            category
         ]
     }
 
@@ -35,10 +39,12 @@ class TestTorrentDetails(BaseTestCase):
         tracker_name = self.testObject.getProperty('trackerName')
         filename = self.testObject.getProperty('fileName')
         directory = self.testObject.getProperty('directory')
+        category = self.testObject.getProperty('category')
 
         self.assertEqual(self.trackerName, tracker_name)
         self.assertEqual(self.filename, filename)
         self.assertEqual(self.directory, directory)
+        self.assertEqual(self.category, category)
 
 
 class TorrentHandler(Object):
@@ -47,6 +53,7 @@ class TorrentHandler(Object):
     loggerEnabled = True
     logFile = 'C:\\Users\\Mike\\Documents\\torrentMoverLog.txt'
     details = None
+    priority = 10
 
     def __init__(self, logfile=None):
         if logfile is None:
@@ -80,6 +87,7 @@ class TorrentHandler(Object):
         if enabled == True:
             logger = self.logger
             logger.out(message)
+            print(message)
 
     def setDetails(self, details):
         beforeResult = self.beforeSetDetails(details)

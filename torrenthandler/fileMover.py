@@ -1,6 +1,8 @@
 import os
 import shutil
 
+import re
+
 from torrenthandler.torrent import TorrentHandler, TestTorrentHandler
 
 __author__ = 'Mike'
@@ -12,6 +14,7 @@ class FileMover(TorrentHandler):
     DS = '\\'
     deleteSource = False
     mountDriveLetter = 'P'
+    invalidFileNameCharRegex = re.compile('[\/:*?"<>|]')
 
     def process(self):
         details = self.getDetails()
@@ -31,11 +34,25 @@ class FileMover(TorrentHandler):
 
         return result
 
+    def cleanFileName(self, filename):
+        regex = self.invalidFileNameCharRegex
+        path_splitter = '\\'
+
+        if not filename.startswith(path_splitter):
+            (drive, path) = filename.split(path_splitter, 1)
+            path = regex.sub('', path)
+            result = drive + path_splitter + path
+        else:
+            result = regex.sub('', filename)
+
+        return result
+
     def getDestinationDirectory(self):
         return self.destinationDirectory
 
     def __moveFile(self, sourceFile, destFile):
         result = False
+        destFile = self.cleanFileName(destFile)
         self.log('copying ' + sourceFile + ' to ' + destFile)
 
         self.__mountDestination()
